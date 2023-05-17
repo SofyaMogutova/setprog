@@ -61,15 +61,15 @@ struct user_env* users;
 int users_count=0,active_users_count=0,size=0;
 void* user_chat(void* arg){
     struct user_env client=*(struct user_env*)arg;
-    int sk_listen=socket(AF_INET,SOCK_DGRAM,0);
-    if(sk_listen==-1){
+    int socket=socket(AF_INET,SOCK_DGRAM,0);
+    if(socket==-1){
         perror("udp socket thread");
         pthread_exit(NULL);
     }
-    client.user_fd=sk_listen;
+    client.user_fd=socket;
     for(int i=0;i<users_count;i++){
         if(usercmp(users[i].user,client.user)){
-            users[i].user_fd=sk_listen;
+            users[i].user_fd=socket;
             break;
         }
     }
@@ -124,21 +124,20 @@ void* user_chat(void* arg){
     }
 }
 void* service(void* arg){
-    int sk_listen =*(int*)arg;
+    int socket =*(int*)arg;
     users = malloc(sizeof(struct user_env)*10);
     size=10;
     while(1){
         struct sockaddr_in client;
         socklen_t cl_size=sizeof(client);
         struct message msg;
-        if(recvfrom(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&client,&cl_size)==-1){
+        if(recvfrom(socket,&msg,sizeof(msg),0,(struct sockaddr*)&client,&cl_size)==-1){
             perror("recvfrom service");
             continue;
         }
         printf("Udp recv %s(%d)\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
         struct user_env new_user;
         new_user.user.endp=client;
-        //new_user.user_fd=client_fd;
         new_user.deleted=0;
         pthread_t user_handler;
 
@@ -146,7 +145,7 @@ void* service(void* arg){
             perror("pthread_create");
             struct message msg;
             strcpy(msg.text,"Nready");
-            while(sendto(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&client,sizeof(struct sockaddr_in))==-1){
+            while(sendto(socket,&msg,sizeof(msg),0,(struct sockaddr*)&client,sizeof(struct sockaddr_in))==-1){
                 perror("sendto Nready");
             }
             continue;
@@ -171,8 +170,8 @@ void* service(void* arg){
     }
 }
 int main(){
-    int sk_listen=socket(AF_INET,SOCK_DGRAM,0);
-    if(sk_listen==-1){
+    int socket=socket(AF_INET,SOCK_DGRAM,0);
+    if(socket==-1){
         perror("socket listen");
         exit(EXIT_FAILURE);
     }
@@ -182,7 +181,7 @@ int main(){
     int binded=0;
     for(int i=5000;i<6000;i++){
         serv.sin_port=htons(i);
-        if(bind(sk_listen,(struct sockaddr*)&serv,sizeof(serv))!=-1){
+        if(bind(socket,(struct sockaddr*)&serv,sizeof(serv))!=-1){
             printf("Port: %d\n",i);
             binded=1;
             break;
@@ -190,13 +189,13 @@ int main(){
     }
     if(!binded){
         serv.sin_port=htons(5000);
-        if(bind(sk_listen,(struct sockaddr*)&serv,sizeof(serv))!=-1){
+        if(bind(socket,(struct sockaddr*)&serv,sizeof(serv))!=-1){
             perror("bind");
             exit(EXIT_FAILURE);
         }
     }
     pthread_t srv_handler;
-    pthread_create(&srv_handler,NULL,service,&sk_listen);
+    pthread_create(&srv_handler,NULL,service,&socket);
     while(1){
         char c=getchar();
         if(c=='e'){
