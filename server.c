@@ -11,7 +11,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <mqueue.h>
 
 struct user{
     char name[50];
@@ -25,10 +24,7 @@ struct user_env{
     struct user user;
     int user_fd;
     char deleted;
-    char protocol;
-};
-struct sockets{
-    int udp;
+    pthread_t tid;
 };
 int usercmp(struct user u1, struct user u2){
     if(u1.endp.sin_addr.s_addr==u2.endp.sin_addr.s_addr && u1.endp.sin_port==u2.endp.sin_port) return 1;
@@ -65,6 +61,18 @@ struct user_env* users;
 int users_count=0,active_users_count=0,size=0;
 void* user_chat(void* arg){
     struct user_env client=*(struct user_env*)arg;
+    int sk_listen=socket(AF_INET,SOCK_DGRAM,0);
+    if(sk_listen==-1){
+        perror("udp socket thread");
+        pthread_exit(NULL);
+    }
+    client.user_fd=sk_listen;
+    for(int i=0;i<users_count;i++){
+        if(usercmp(users[i].user,client.user)){
+            users[i].user_fd=sk_listen;
+            break;
+        }
+    }
     struct message msg;
     strcpy(msg.text,"Ready"); 
     if(sendto(client.user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client.user.endp,sizeof(struct sockaddr_in))==-1){
@@ -72,6 +80,7 @@ void* user_chat(void* arg){
             pthread_exit(NULL);
     }
     while(1){
+        socklen_t cl_size=sizeof(struct sockaddr_in);
         if(recvfrom(client.user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client.user.endp,&cl_size)==-1){
             perror("recvfrom");
             continue;
@@ -102,7 +111,7 @@ void* user_chat(void* arg){
             msg.sender=client.user;
             for(int i=0;i<users_count;i++){
                 if(users[i].deleted==0){
-                    if(sendto(users[i].user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client.user.endp,sizeof(struct sockaddr_in))==-1){
+                    if(sendto(users[i].user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&users[i].user.endp,sizeof(struct sockaddr_in))==-1){
                         perror("sendto user");
                     }
                 }
@@ -121,15 +130,15 @@ void* service(void* arg){
     while(1){
         struct sockaddr_in client;
         socklen_t cl_size=sizeof(client);
-        
-        if(recvfrom(client.user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client,&cl_size)==-1){
+        struct message msg;
+        if(recvfrom(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&client,&cl_size)==-1){
             perror("recvfrom service");
             continue;
         }
         printf("Udp recv %s(%d)\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
         struct user_env new_user;
         new_user.user.endp=client;
-        new_user.user_fd=client_fd;
+        //new_user.user_fd=client_fd;
         new_user.deleted=0;
         pthread_t user_handler;
 
@@ -137,7 +146,7 @@ void* service(void* arg){
             perror("pthread_create");
             struct message msg;
             strcpy(msg.text,"Nready");
-            while(sendto(client_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client.user.endp,sizeof(struct sockaddr_in))==-1){
+            while(sendto(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&client,sizeof(struct sockaddr_in))==-1){
                 perror("sendto Nready");
             }
             continue;
@@ -197,8 +206,8 @@ int main(){
                     struct message msg;
                     strcpy(msg.text,"Dead");
                     msg.sender.endp=serv;
-                    if(sendto(users[i].user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&client.user.endp,sizeof(struct sockaddr_in))==-1){
-                        perror("send");
+                    if(sendto(users[i].user_fd,&msg,sizeof(msg),0,(struct sockaddr*)&users[i].user.endp,sizeof(struct sockaddr_in))==-1){
+                        perror("sendto");
                     }
                     pthread_cancel(users[i].tid);
                     close(users[i].user_fd);
@@ -211,7 +220,7 @@ int main(){
                 if(!users[i].deleted)
                     printf("%s %s(%d)\t%d\tUDP\t%d\n",users[i].user.name,inet_ntoa(users[i].user.endp.sin_addr),ntohs(users[i].user.endp.sin_port),users[i].deleted,users[i].user_fd);
             }
-            printf("Total users count: %d\nActive users count:%d\n",users_count,active_users_count,size);
+            printf("Total users count: %d\nActive users count:%d\nThreads: %d\n",users_count,active_users_count,size);
         }
         while(getchar()!='\n');
     }
