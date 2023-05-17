@@ -92,8 +92,8 @@ void* receive(void* arg){
     }
 }
 int main(){
-    int sk_listen=socket(AF_INET,SOCK_DGRAM,0);
-    if(sk_listen==-1){
+    int socket=socket(AF_INET,SOCK_DGRAM,0);
+    if(socket==-1){
         perror("socket");
         exit(EXIT_FAILURE);
     }
@@ -105,7 +105,7 @@ int main(){
     struct message msg;
     for(int i=5000;i<6000;i++){
         server.sin_port=htons(i);
-        if(sendto(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))!=-1){
+        if(sendto(socket,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))!=-1){
             printf("Port: %d\n",i);
             connected=1;
             break;
@@ -113,7 +113,7 @@ int main(){
     }
     if(!connected){
         server.sin_port=htons(5000);
-        if(sendto(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))==-1){
+        if(sendto(socket,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))==-1){
             perror("sendto");
             exit(EXIT_FAILURE);
         }
@@ -127,7 +127,7 @@ int main(){
             break;
         }
     }
-    if(recvfrom(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&server,&srv_size)==-1){
+    if(recvfrom(socket,&msg,sizeof(msg),0,(struct sockaddr*)&server,&srv_size)==-1){
         perror("recvrom Ready");
         exit(EXIT_FAILURE);
     }
@@ -137,13 +137,13 @@ int main(){
     }
     chat.endp=server;
     sprintf(msg.text,"Name %s",user.name);
-    if(sendto(sk_listen,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))==-1){
+    if(sendto(socket,&msg,sizeof(msg),0,(struct sockaddr*)&server,sizeof(server))==-1){
         perror("send Name");
         exit(EXIT_FAILURE);
     }
     pthread_t sender,receiver;
-    pthread_create(&sender,NULL,_send,&sk_listen);
-    pthread_create(&receiver,NULL,receive,&sk_listen);
+    pthread_create(&sender,NULL,_send,&socket);
+    pthread_create(&receiver,NULL,receive,&socket);
     pthread_join(sender,NULL);
     pthread_cancel(receiver);
     exit(EXIT_SUCCESS);
